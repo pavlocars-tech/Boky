@@ -262,7 +262,10 @@ Mandantentrennung: Jeder Kunden-Endpunkt filtert serverseitig über `customer_id
 | 11 | Hosting/Domain/E-Mail | **vorhanden** | Alles über Umgebungsvariablen konfigurierbar (`.env.example`). |
 | 12 | Region | **Wien** | Zeitzone `Europe/Vienna`, Oberfläche Deutsch. Datenschutz: DSGVO + österreichisches DSG. |
 
-**Annahme zu Frage 2, bitte bestätigen:** Ein Kunde bucht „X Sekunden auf N Taxis“; im Taxi zeigen beide Bildschirme diese Werbung. Sollen die zwei Bildschirme einzeln verkauft werden, ändert sich nur die Zuteilungsebene (Fahrzeug → Bildschirm).
+**Bestätigt (27.10.2026):**
+- Beide Bildschirme eines Taxis zeigen dasselbe; verkauft wird pro Taxi.
+- Tablets sind quer eingebaut (1920×1200).
+- Internet im Taxi kommt über einen eingebauten Raspberry Pi mit Mobilfunk-Dongle, der WLAN bereitstellt. Offen: Woher kommt die GPS-Position (siehe Abschnitt 11)?
 
 **Videos kürzer als die gebuchte Dauer:** Das letzte Bild bleibt bis zum Ende des Slots stehen.
 
@@ -287,3 +290,11 @@ Mandantentrennung: Jeder Kunden-Endpunkt filtert serverseitig über `customer_id
 ```
 
 Der Player spielt im n-ten Durchlauf von jedem Slot die Variante `n mod Anzahl` – so wechseln sich die Motive ab. Die Summe aller Slots ist immer `loopMs`.
+
+## 11. Raspberry Pi im Taxi (offen, Vorschlag)
+
+Wenn die Tablets nur WLAN haben (Tab A9+ Wi-Fi, SM-X210), fehlt ihnen in der Regel ein GPS-Empfänger. Mögliche Lösung:
+
+- **GPS über den Pi:** Ein GPS-Empfänger am Pi (USB-GPS oder GNSS im LTE-Stick) läuft mit `gpsd`. Ein kleiner Dienst auf dem Pi stellt die Position im Taxi-WLAN bereit (`http://<pi>/position`); die Player-App liest sie dort statt vom Tablet.
+- **Gleichlauf beider Bildschirme:** Die Schleife wird an der Uhrzeit ausgerichtet (Position = Zeit seit Mitternacht mod Schleifenlänge). Beide Tablets zeigen so ohne Absprache zur selben Zeit dasselbe; Voraussetzung ist eine per NTP synchrone Uhr.
+- **Optional, später:** Der Pi lädt die Medien einmal für beide Tablets (halbiert das Datenvolumen).
