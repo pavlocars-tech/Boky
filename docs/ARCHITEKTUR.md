@@ -1,6 +1,6 @@
 # TaxiAds – Architektur- und Datenmodell-Vorschlag (Entwurf v0.1)
 
-Status: **Vorschlag, noch kein Code.** Offene Fragen stehen am Ende (Abschnitt 9).
+Status: **v0.2 – Entscheidungen eingearbeitet, Phase 1 (Backend) umgesetzt.** Entscheidungen siehe Abschnitt 9.
 
 ---
 
@@ -33,15 +33,15 @@ flowchart LR
 |---|---|---|
 | Player | Kotlin, Media3/ExoPlayer, Room (SQLite), WorkManager, Android Device Owner + Lock-Task-Modus | Nativ = zuverlässiger Kiosk, Autostart, Helligkeitssteuerung, GPS im Hintergrund |
 | API | Node.js 22, TypeScript, **Fastify**, Zod-Validierung, OpenAPI | Fastify ist schneller und schema-orientierter als Express; Zod-Schemas teilen wir mit dem Frontend |
-| DB-Zugriff | **Drizzle ORM** + SQL-Migrationen | Typsicher, aber nah an SQL – wichtig für PostGIS, Range-Typen und Partitionierung (Prisma ist da schwach) |
-| Hintergrundjobs | **pg-boss** (Queue in PostgreSQL) | Kein zusätzliches Redis nötig; später austauschbar |
+| DB-Zugriff | **postgres.js** (getaggte SQL-Templates) + SQL-Migrationen | Geändert gegenüber v0.1 (Drizzle): PostGIS, `daterange`, Exclusion-Constraints und Partitionierung lassen sich in reinem SQL klarer abbilden; kein zweites Schema im ORM pflegen |
+| Hintergrundjobs | eigene, kleine Job-Tabelle in PostgreSQL (`jobs`, `FOR UPDATE SKIP LOCKED`) | Geändert gegenüber v0.1 (pg-boss): ~80 Zeilen, keine weitere Abhängigkeit; Entprellung pro Fahrzeug eingebaut; später austauschbar |
 | Datenbank | PostgreSQL 16 + PostGIS, Partitionierung nach Monat für Massendaten | Eine Datenbank für alles, skaliert für tausende Fahrzeuge |
 | Medien | S3-kompatibel in der EU (z. B. Hetzner Object Storage, IONOS, Scaleway oder AWS eu-central-1), ffprobe/ffmpeg im Worker | Upload direkt vom Browser über signierte URLs, Server wird nicht belastet |
 | Web | Next.js (App Router), React, Leaflet + OpenStreetMap, TanStack Query | Ein Projekt, zwei Bereiche (`/admin`, `/portal`) mit Rollenprüfung |
 | Repo | Monorepo (pnpm): `apps/api`, `apps/web`, `apps/player-android`, `packages/shared` | Gemeinsame Typen; Schleifen-/Buchungslogik als reine, gut testbare Bibliothek |
 | Betrieb | Docker Compose (Start), später Kubernetes; Hosting in Deutschland/EU | Klein anfangen, ohne Umbau wachsen |
 
-**Begründete Abweichungen vom Vorschlag:** keine grundsätzlichen. Ergänzt habe ich Fastify, Drizzle und pg-boss als konkrete Bausteine. Kein Redis/Kafka in v1; wird erst ab mehreren tausend Geräten mit hoher Last relevant und kann dann ergänzt werden.
+**Begründete Abweichungen vom Vorschlag:** keine grundsätzlichen. Ergänzt habe ich Fastify, postgres.js und eine eigene Job-Tabelle als konkrete Bausteine. Kein Redis/Kafka in v1; wird erst ab mehreren tausend Geräten mit hoher Last relevant und kann dann ergänzt werden.
 
 ---
 
@@ -98,7 +98,7 @@ Aufbau einer Schleife (Beispiel L = 300):
 | Ausspiel-Log | Fahrzeug, Kampagne, Motiv, Start (UTC + Zeitzone), geplante/tatsächliche Dauer, vollständig/abgebrochen (+ Grund), GPS-Position beim Start |
 | GPS | Foreground-Service, FusedLocation oder GPS direkt, Intervall vom Server (Standard 30 s) |
 | Heartbeat | alle 60 s: Playlist-Version, freier Speicher, aktueller Inhalt, App-Version, Akku/Temperatur falls verfügbar |
-| Helligkeit | Zeitplan vom Server (z. B. 06:00–16:00 → 50 %, sonst 5 %), Auswertung in lokaler Zeitzone `Europe/Berlin` (Sommer-/Winterzeit automatisch über `java.time`); gesetzt über `Settings.System.SCREEN_BRIGHTNESS` (als Device Owner erlaubt) + Fenster-Helligkeit |
+| Helligkeit | Zeitplan vom Server (z. B. 06:00–16:00 → 50 %, sonst 5 %), Auswertung in lokaler Zeitzone `Europe/Vienna` (Sommer-/Winterzeit automatisch über `java.time`); gesetzt über `Settings.System.SCREEN_BRIGHTNESS` (als Device Owner erlaubt) + Fenster-Helligkeit |
 | Uhrzeit | Netzwerkzeit + Abgleich mit Serverzeit im Heartbeat; Abweichung wird gemeldet |
 | Updates | v1: Admin lädt APK hoch, Gerät installiert still (Device Owner). Alternativ über ein MDM (Frage 1) |
 
@@ -129,7 +129,7 @@ audit_log            id, user_id, action, entity_type, entity_id, diff jsonb, cr
 ### 4.2 Fahrzeuge und Geräte
 ```
 vehicles             id, label (z. B. Konzessionsnr.), license_plate, city, active,
-                     timezone (Standard Europe/Berlin), notes
+                     timezone (Standard Europe/Vienna), notes
                      -- KEINE Fahrerdaten
 devices              id, vehicle_id → vehicles (NULL = nicht zugeordnet), public_key,
                      status(pending|active|blocked), app_version, model, android_version,
@@ -164,7 +164,7 @@ media_assets         id, owner_type(customer|filler), storage_key, mime_type, si
 allocations          id, campaign_id, vehicle_id, period daterange, seconds_per_loop,
                      status(active|released)
                      INDEX GiST (vehicle_id, period)
-filler_contents      id, media_asset_id, title, active, weight, valid daterange
+fillers              id, media_asset_id, title, active, sort_order, start_date, end_date
 targeting_rules      id, campaign_id, type(geo|time), geo geography(MultiPolygon),
                      time_windows jsonb       -- Tabelle existiert, wird in v1 nicht ausgewertet
 ```
@@ -245,6 +245,45 @@ Mandantentrennung: Jeder Kunden-Endpunkt filtert serverseitig über `customer_id
 
 ---
 
-## 9. Offene Fragen
+## 9. Entscheidungen (Antworten vom 26.10.2026)
 
-Siehe Antwort im Chat; Entscheidungen werden hier nachgetragen.
+| # | Frage | Entscheidung | Umsetzung |
+|---|---|---|---|
+| 1 | Hardware | **Samsung Galaxy Tab A9+** | Zielformat 1920×1200 (Querformat), Videos H.264/MP4 30 fps. Für SIM + GPS wird die 5G-Variante (SM-X216B) benötigt. Einrichtung als Device Owner per QR-Code nach Werksreset. |
+| 2 | Bildschirme pro Taxi | **2** | `maxScreensPerVehicle = 2`, Plätze 1 und 2. Beide Bildschirme spielen dieselbe Schleife des Fahrzeugs; Kapazität wird **pro Fahrzeug** verkauft (Annahme, siehe unten). Jeder Bildschirm protokolliert eigene Ausspielungen. |
+| 3 | Zu wenige Fahrzeuge | Ablehnen, **Anzahl wählbar** | Buchung wird mit „nur N Fahrzeuge verfügbar“ abgelehnt; Kunde wählt nur die Anzahl, das System die Fahrzeuge. |
+| 4 | Pausieren / Erhöhen | **Ja** | Pause hält die Kapazität reserviert (Zeit wird mit Füllern belegt). Erhöhungen von Sekunden, Fahrzeugen oder Laufzeit werden erneut geprüft. |
+| 5 | Schleifenlänge ändern | **Richtwert** | Änderung gilt sofort für neue Buchungen. Bestehende Buchungen bleiben unangetastet; sind auf einem Fahrzeug mehr Sekunden verkauft als die neue Länge, wird die Schleife dort entsprechend länger (`effektive Länge = max(Einstellung, verkaufte Sekunden)`). |
+| 6 | Ton | **stumm** | Tonspur wird beim Umwandeln entfernt. |
+| 7 | Medien | **automatisch umwandeln** | ffmpeg im Worker: Seitenverhältnis bleibt, Rand schwarz, Videos ohne Ton. Grenzen (einstellbar): Bilder 20 MB, Videos 200 MB; Buchung in 5-Sekunden-Schritten von 5 bis 60 s. |
+| 8 | Abgebrochene Ausspielungen | **zählen mit** | Werden gezählt und zusätzlich als „abgebrochen“ ausgewiesen. |
+| 9 | GPS-Rohdaten | **90 Tage** | `gpsRawRetentionDays = 90`, täglicher Löschlauf (ganze Monatspartitionen + Rest). Kundenkarte vergröbert auf ca. 175-m-Zellen (Phase 5). |
+| 10 | Konten | **Selbstregistrierung mit Mitarbeitern** | Firma + Inhaber registrieren sich selbst (E-Mail-Bestätigung), Inhaber laden Mitarbeiter ein (Rollen Inhaber/Mitarbeiter). |
+| 11 | Hosting/Domain/E-Mail | **vorhanden** | Alles über Umgebungsvariablen konfigurierbar (`.env.example`). |
+| 12 | Region | **Wien** | Zeitzone `Europe/Vienna`, Oberfläche Deutsch. Datenschutz: DSGVO + österreichisches DSG. |
+
+**Annahme zu Frage 2, bitte bestätigen:** Ein Kunde bucht „X Sekunden auf N Taxis“; im Taxi zeigen beide Bildschirme diese Werbung. Sollen die zwei Bildschirme einzeln verkauft werden, ändert sich nur die Zuteilungsebene (Fahrzeug → Bildschirm).
+
+**Videos kürzer als die gebuchte Dauer:** Das letzte Bild bleibt bis zum Ende des Slots stehen.
+
+## 10. Playlist-Format (Server → Player)
+
+```jsonc
+{
+  "version": 12, "vehicleId": "…", "timezone": "Europe/Vienna",
+  "validFrom": "2026-11-02", "validTo": "2026-11-08",       // 7 Tage im Voraus → offline um Mitternacht korrekt
+  "media": [{ "id": "…", "type": "video", "sha256": "…", "sizeBytes": 3100000, "durationMs": 14960,
+              "url": "/device/v1/media/…" }],                // Weiterleitung auf kurzlebige Download-URL
+  "days": [{
+    "date": "2026-11-02", "loopMs": 300000,
+    "slots": [
+      { "kind": "campaign", "campaignId": "…", "durationMs": 15000,
+        "variants": [[{ "kind": "campaign", "creativeId": "A", "mediaId": "…", "durationMs": 15000 }],
+                     [{ "kind": "campaign", "creativeId": "B", "mediaId": "…", "durationMs": 15000 }]] },
+      { "kind": "filler", "durationMs": 85000, "variants": [[ …Füllstücke, Summe = 85000… ]] }
+    ]
+  }]
+}
+```
+
+Der Player spielt im n-ten Durchlauf von jedem Slot die Variante `n mod Anzahl` – so wechseln sich die Motive ab. Die Summe aller Slots ist immer `loopMs`.

@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: taxiads
+          POSTGRES_PASSWORD: taxiads
+          POSTGRES_DB: taxiads
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U taxiads" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+        env:
+          TEST_DATABASE_URL: postgres://taxiads:taxiads@localhost:5432/taxiads_test

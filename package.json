@@ -1,0 +1,22 @@
+{
+  "name": "taxiads",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @taxiads/api dev",
+    "dev:worker": "pnpm --filter @taxiads/api dev:worker",
+    "db:migrate": "pnpm --filter @taxiads/api migrate",
+    "db:seed": "pnpm --filter @taxiads/api seed",
+    "format": "prettier --write \"apps/api/{src,test}/**/*.ts\" \"packages/shared/{src,test}/**/*.ts\"",
+    "format:check": "prettier --check \"apps/api/{src,test}/**/*.ts\" \"packages/shared/{src,test}/**/*.ts\""
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.10"
+  }
+}

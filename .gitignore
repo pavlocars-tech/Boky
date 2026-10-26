@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.log
+coverage/
+.data/
+.next/
+# Android
+.gradle/
+build/
+local.properties
+*.apk
+.idea/

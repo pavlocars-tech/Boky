@@ -1,0 +1,44 @@
+{
+  "name": "@taxiads/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
+    "build": "tsup",
+    "migrate": "tsx src/cli/migrate.ts",
+    "seed": "tsx src/cli/seed.ts",
+    "create-admin": "tsx src/cli/create-admin.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "simulate-device": "tsx src/cli/simulate-device.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/s3-request-presigner": "^3.1156.0",
+    "@fastify/cookie": "^11.1.3",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@node-rs/argon2": "^2.2.2",
+    "@taxiads/shared": "workspace:*",
+    "fastify": "^5.12.7",
+    "fastify-type-provider-zod": "^7.0.0",
+    "jose": "^6.2.13",
+    "nodemailer": "^10.2.1",
+    "postgres": "^3.4.9",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/nodemailer": "^8.0.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

@@ -1,0 +1,44 @@
+# Lokale Entwicklungs- und Testumgebung. Für Produktion: eigene Secrets, TLS-Proxy, verwalteter S3-Speicher in der EU.
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: taxiads
+      POSTGRES_PASSWORD: taxiads
+      POSTGRES_DB: taxiads
+    ports: ["5432:5432"]
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxiads"]
+      interval: 5s
+      retries: 10
+
+  # S3-kompatibler Speicher (lokal); in Produktion z. B. Hetzner Object Storage, IONOS, Exoscale Wien oder AWS eu-central-1
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: taxiads
+      MINIO_ROOT_PASSWORD: taxiads-minio-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio-data:/data]
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: [.env.docker]
+    depends_on:
+      db: { condition: service_healthy }
+      minio: { condition: service_started }
+    ports: ["3000:3000"]
+
+  worker:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    command: ["node", "dist/worker.js"]
+    env_file: [.env.docker]
+    depends_on:
+      db: { condition: service_healthy }
+      minio: { condition: service_started }
+
+volumes:
+  db-data:
+  minio-data:
